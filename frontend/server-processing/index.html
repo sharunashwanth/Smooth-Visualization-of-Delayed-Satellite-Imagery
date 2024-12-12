@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leaflet WMS with Bounding Box - Server</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/boxicons@2.1.4/dist/boxicons.js"></script>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <div id="timestamp-selection-div">
+            <select name="timestamp-selection" id="timestamp-selection"></select>
+        </div>
+        <div id="interpolation-timestamp-selection-div">
+            <select name="interpolation-timestamp-selection" id="interpolation-timestamp-selection"></select>
+        </div>
+        <div id="areas">
+            <button id="select-area">Select Area</button>
+            <button id="clear-area">Clear Area</button>
+        </div>
+        <div id="video-controls" style="display: none;">
+                <button class="video-controls-btn" id="prev-frame">
+                    <box-icon name='skip-previous-circle'></box-icon>
+                </button>
+                <button class="video-controls-btn" id="pause">
+                    <box-icon name='pause-circle'></box-icon>
+                </button>
+                <button class="video-controls-btn" id="next-frame">
+                    <box-icon name='skip-next-circle'></box-icon>
+                </button>
+        </div>
+    </div>
+    <video id="loading-indicator" src="loading.mp4" style="display: none;" autoplay loop></video>
+    <div id="range">
+        <label for="squareSizeInput" >Area Size:</label>
+        <input type="range" id="squareSizeInput" min="8" max="30" value="12">
+
+    </div>
+
+        <div class="time-label">Starting Time   To   Ending time</div>
+
+    <script>
+        const R = 6378137; // earth radius
+
+        const timestampSelectionInput = document.querySelector("#timestamp-selection");
+        const interpolationTimestampSelectionInput = document.querySelector("#interpolation-timestamp-selection");
+
+        let selectionDate = "10DEC"
+
+        let timestamps = [ "0015", "0045", "0115", "0145", "0215", "0245", "0315", "0345", "0415", "0445", "0515", "0545", "0615", "0645", "0715", "0745", "0815", "0845", "0915", "0945", "1015", "1045", "1115", "1145", "1215", "1245", "1315", "1345", "1415", "1445", "1515", "1545", "1615", "1645", "1715", "1745", "1815", "1845", "1915", "1945", "2015", "2045", "2115", "2145", "2215", "2245", "2315", "2345"];
+
+        timestamps.forEach((value, index) => {
+            if (index !== 0) {
+                timestampSelectionInput.innerHTML += `<option value="${value}">${selectionDate} - ${value}</option>`;
+            }
+        });
+
+        function latLonToMercator(longitude, latitude) {
+            const x = R * (longitude * Math.PI / 180); // longitude to radians
+            const y = R * Math.log(Math.tan(Math.PI / 4 + (latitude * Math.PI / 180) / 2)); // latitude to y
+            return { x, y };
+        }
+
+        const map = L.map('map', {
+            center: [20.5937, 78.9629],
+            zoom: 4,
+            // minZoom: 4,
+            // maxZoom: 8
+        });
+
+        let wmsLayer = null;
+
+        function updateLayer() {
+            if (wmsLayer != null) {
+                map.removeLayer(wmsLayer);
+            }
+
+            wmsLayer = L.tileLayer.wms(`https://www.mosdac.gov.in/live_data/wms/live3RL1BSTD1km/products/Insat3r/3R_IMG/2024/${selectionDate}/3RIMG_${selectionDate}2024_${timestampSelectionInput.value}_L1B_STD_V01R00.h5`, {
+                    layers: 'IMG_VIS', // Extracted from the LAYERS parameter
+                    format: 'image/png', // Extracted from the FORMAT parameter
+                    transparent: true, // Extracted from TRANSPARENT parameter
+                    styles: 'boxfill/greyscale', // Extracted from STYLES parameter
+                    colorscalerange: '20,489', // Extracted from COLORSCALERANGE parameter
+                    belowmincolor: 'extend', // Below min color setting
+                    abovemaxcolor: 'extend', // Above max color setting
+                    crs: L.CRS.EPSG3857, // Extracted from CRS parameter
+            });
+
+            map.addLayer(wmsLayer);
+
+            let valueToExclude = timestampSelectionInput.value;
+            let index = timestamps.indexOf(valueToExclude);
+            let filteredTimes = timestamps.slice(0, index);
+
+            interpolationTimestampSelectionInput.innerHTML = "";
+            filteredTimes.forEach((value, index) => {
+                interpolationTimestampSelectionInput.innerHTML += `<option value="${value}">${selectionDate} - ${value}</option>`;
+            });
+        }
+
+        timestampSelectionInput.addEventListener("change", (e) => {
+            updateLayer();
+        });
+
+        updateLayer(); // for inital layer load
+
+        let startPoint = null;
+        let rectangle = null;
+        let videoOverlay = null;
+        let videoElement = null;
+
+        const selectAreaButton = document.getElementById('select-area');
+        const clearAreaButton = document.getElementById('clear-area');
+        const squareSizeInput = document.querySelector("#squareSizeInput");
+
+        const frameRate = 30; // take 30 FPS
+        const frameDuration = 1 / frameRate; // duration of one frame in seconds
+
+        const pauseControlBtn = document.getElementById('pause');
+        const nextFrameControlBtn = document.getElementById('next-frame');
+        const prevFrameControlBtn = document.getElementById('prev-frame');
+
+        pauseControlBtn.disabled = true;
+        nextFrameControlBtn.disabled = true;
+        prevFrameControlBtn.disabled = true;
+        document.querySelector("#video-controls").style.display = "none";
+
+        function attachVideoControls(videoElement) {
+            pauseControlBtn.onclick = () => {
+                if (videoElement) {
+                    if (videoElement.paused) {
+                        videoElement.play();
+                        pauseControlBtn.innerHTML = `<box-icon name='pause-circle'></box-icon>`;
+                    } else {
+                        videoElement.pause();
+                        pauseControlBtn.innerHTML = `<box-icon name='play-circle' ></box-icon>`;
+                        document.querySelector("#current-frame-indicator p").textContent = `Current Frame: ${Math.floor(videoElement.currentTime * frameRate)}`;
+                    }
+                }
+            };
+
+            nextFrameControlBtn.onclick = () => {
+                if (videoElement) {
+                    videoElement.pause(); // make the video paused
+                    pauseControlBtn.innerHTML = `<box-icon name='play-circle' ></box-icon>`;
+                    document.querySelector("#current-frame-indicator p").textContent = `Current Frame: ${Math.floor(videoElement.currentTime * frameRate)}`;
+                    videoElement.currentTime += frameDuration; // next frame
+                }
+            };
+
+            document.getElementById('prev-frame').onclick = () => {
+                if (videoElement) {
+                    videoElement.pause();
+                    pauseControlBtn.innerHTML = `<box-icon name='play-circle' ></box-icon>`;
+                    document.querySelector("#current-frame-indicator p").textContent = `Current Frame: ${Math.floor(videoElement.currentTime * frameRate)}`;
+                    videoElement.currentTime = Math.max(0, videoElement.currentTime - frameDuration);
+                }
+            };
+
+            pauseControlBtn.disabled = false;
+            nextFrameControlBtn.disabled = false;
+            prevFrameControlBtn.disabled = false;
+            document.querySelector("#video-controls").style.display = "block";
+        }
+
+        selectAreaButton.addEventListener('click', () => {
+            map.dragging.disable(); // no panning while selecting
+            selectAreaButton.disabled = true; // no Select Area button during selection
+
+            clearSelectedArea();
+
+            map.once("mousedown", (downEvent) => {
+                let abc = false;
+                rectangle = L.rectangle([downEvent.latlng, downEvent.latlng], { color: 'green', weight: 2 }).addTo(map);
+
+                map.on("mousemove", (moveEvent) => {
+                    abc = true;
+                    let mousePoint = moveEvent.latlng;
+                    let squareSize = parseInt(squareSizeInput.value);
+                    let startPoint = L.latLng(mousePoint.lat + squareSize, mousePoint.lng - squareSize);
+                    let endPoint = L.latLng(mousePoint.lat - squareSize, mousePoint.lng + squareSize);
+
+                    rectangle.setBounds([startPoint, endPoint]);
+                });
+
+                map.once('mousedown', async (secondDownEvent) => {
+                    if (!abc) return;
+                    let bounds = rectangle.getBounds();
+                    let bottomLeft = bounds.getSouthWest();
+                    let topRight = bounds.getNorthEast();
+
+                    map.off('mousemove'); // Stop moving the rectangle
+                    map.dragging.enable(); // Re-enable map dragging
+                    selectAreaButton.disabled = false; // Re-enable Select Area button
+
+                    let bottomLeftBBox = latLonToMercator(bottomLeft.lng, bottomLeft.lat);
+                    let topRightBBox = latLonToMercator(topRight.lng, topRight.lat);
+
+                    const uniqueId = crypto.randomUUID();
+
+                    let startIndex = timestamps.indexOf(interpolationTimestampSelectionInput.value);
+                    let endIndex = timestamps.indexOf(timestampSelectionInput.value);
+                    let intermediateTimestamps = timestamps.slice(startIndex, endIndex + 1);
+
+                    let url = 'https://literate-disco-9pwjjqv9q6p37wgr-5000.app.github.dev/interpolate/';
+                    let data = {
+                        timestamp: intermediateTimestamps,
+                        bbox: [bottomLeftBBox.x,  bottomLeftBBox.y, topRightBBox.x,topRightBBox.y].join("%2C"),
+                        req_id: uniqueId
+                    }
+
+                    console.log(data);
+
+                    document.querySelector("#loading-indicator").style.display = "block";
+
+                    let resp = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    let respJson = await resp.json();
+
+                    const videoBounds = [[bottomLeft.lat, bottomLeft.lng], [topRight.lat, topRight.lng]]; // SouthWest and NorthEast corners
+                    const videoUrl = `https://literate-disco-9pwjjqv9q6p37wgr-5000.app.github.dev/static/${uniqueId}.mp4`;
+
+                    document.querySelector("#loading-indicator").style.display = "none";
+                    clearSelectedArea();
+
+                    videoOverlay = L.videoOverlay(videoUrl, videoBounds, {
+                        opacity: 1,
+                        interactive: true,
+                    }).addTo(map);
+
+                    videoElement = videoOverlay.getElement();
+                    videoElement.play();
+
+                    attachVideoControls(videoElement);
+                });
+            });
+        });
+
+        function clearSelectedArea() {
+            if (rectangle != null) {
+                map.removeLayer(rectangle);
+            }
+            if (videoOverlay != null) {
+                map.removeLayer(videoOverlay);
+            }
+
+            videoElement = null;
+            pauseControlBtn.disabled = true;
+            nextFrameControlBtn.disabled = true;
+            prevFrameControlBtn.disabled = true;
+            document.querySelector("#video-controls").style.display = "none";
+        }
+
+        clearAreaButton.addEventListener('click', () => {
+            clearSelectedArea();
+    });
+    </script>
+</body>
+</html>
