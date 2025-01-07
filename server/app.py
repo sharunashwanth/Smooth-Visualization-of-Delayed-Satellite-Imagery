@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify
 from generator import interpolate
 from imageio import mimsave
 
-app = Flask(_name_)
+app = Flask(__name__)
 from flask_cors import CORS
 CORS(app)
 
@@ -111,5 +111,5 @@ def receive_data():
 def hello():
     return 'hi'
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     app.run(debug=True)
