@@ -7,7 +7,7 @@ from imageio import mimsave
 
 
 model = Model().eval()
-model.load_state_dict(torch.load('/workspaces/Latent-Space-Interpolation/server/IFRNet_S_Vimeo90K.pth'))
+model.load_state_dict(torch.load('IFRNet_S_Vimeo90K.pth',weights_only=True))
 
 
 def interpolate_frame(model, img0, img1):

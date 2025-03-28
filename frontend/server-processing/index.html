@@ -204,7 +204,7 @@
                     let endIndex = timestamps.indexOf(timestampSelectionInput.value);
                     let intermediateTimestamps = timestamps.slice(startIndex, endIndex + 1);
 
-                    let url = 'https://literate-disco-9pwjjqv9q6p37wgr-5000.app.github.dev/interpolate/';
+                    let url = 'https://jubilant-space-dollop-jx9qq465qp6fjqxg-5000.app.github.dev/interpolate/';
                     let data = {
                         timestamp: intermediateTimestamps,
                         bbox: [bottomLeftBBox.x,  bottomLeftBBox.y, topRightBBox.x,topRightBBox.y].join("%2C"),
@@ -225,7 +225,7 @@
                     let respJson = await resp.json();
 
                     const videoBounds = [[bottomLeft.lat, bottomLeft.lng], [topRight.lat, topRight.lng]]; // SouthWest and NorthEast corners
-                    const videoUrl = `https://literate-disco-9pwjjqv9q6p37wgr-5000.app.github.dev/static/${uniqueId}.mp4`;
+                    const videoUrl = `https://jubilant-space-dollop-jx9qq465qp6fjqxg-5000.app.github.dev/static/${uniqueId}.mp4`;
 
                     document.querySelector("#loading-indicator").style.display = "none";
                     clearSelectedArea();
